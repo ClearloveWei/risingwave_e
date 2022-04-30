@@ -13,17 +13,21 @@
 // limitations under the License.
 
 use super::*;
+use crate::executor_v2::LookupUnionExecutor;
 
-pub struct MergeExecutorBuilder;
+pub struct LookupUnionExecutorBuilder;
 
-impl ExecutorBuilder for MergeExecutorBuilder {
+impl ExecutorBuilder for LookupUnionExecutorBuilder {
     fn new_boxed_executor(
         params: ExecutorParams,
-        node: &stream_plan::StreamNode,
+        node: &StreamNode,
         _store: impl StateStore,
-        stream: &mut LocalStreamManagerCore,
+        _stream: &mut LocalStreamManagerCore,
     ) -> Result<BoxedExecutor> {
-        let node = try_match_expand!(node.get_node().unwrap(), Node::MergeNode)?;
-        stream.create_merge_node(params, node)
+        let lookup_union = try_match_expand!(node.get_node().unwrap(), Node::LookupUnionNode)?;
+        Ok(
+            LookupUnionExecutor::new(params.pk_indices, params.input, lookup_union.order.clone())
+                .boxed(),
+        )
     }
 }

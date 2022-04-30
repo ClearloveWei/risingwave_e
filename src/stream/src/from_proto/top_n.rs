@@ -12,28 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use risingwave_common::error::Result;
-use risingwave_common::try_match_expand;
 use risingwave_common::util::sort_util::OrderType;
 use risingwave_pb::plan_common::OrderType as ProstOrderType;
-use risingwave_pb::stream_plan;
-use risingwave_pb::stream_plan::stream_node::Node;
-use risingwave_storage::{Keyspace, StateStore};
 
-use crate::executor::ExecutorBuilder;
-use crate::executor_v2::{AppendOnlyTopNExecutor, BoxedExecutor, Executor};
-use crate::task::{ExecutorParams, LocalStreamManagerCore};
+use super::*;
+use crate::executor_v2::TopNExecutor;
 
-pub struct AppendOnlyTopNExecutorBuilder;
+pub struct TopNExecutorBuilder;
 
-impl ExecutorBuilder for AppendOnlyTopNExecutorBuilder {
+impl ExecutorBuilder for TopNExecutorBuilder {
     fn new_boxed_executor(
         mut params: ExecutorParams,
-        node: &stream_plan::StreamNode,
+        node: &StreamNode,
         store: impl StateStore,
         _stream: &mut LocalStreamManagerCore,
     ) -> Result<BoxedExecutor> {
-        let node = try_match_expand!(node.get_node().unwrap(), Node::AppendOnlyTopNNode)?;
+        let node = try_match_expand!(node.get_node().unwrap(), Node::TopNNode)?;
         let order_types: Vec<_> = node
             .get_order_types()
             .iter()
@@ -47,7 +41,7 @@ impl ExecutorBuilder for AppendOnlyTopNExecutorBuilder {
             Some(node.limit as usize)
         };
         let cache_size = Some(1024);
-        let total_count = (0, 0);
+        let total_count = (0, 0, 0);
         let keyspace = Keyspace::executor_root(store, params.executor_id);
         let key_indices = node
             .get_distribution_keys()
@@ -55,7 +49,7 @@ impl ExecutorBuilder for AppendOnlyTopNExecutorBuilder {
             .map(|key| *key as usize)
             .collect::<Vec<_>>();
 
-        Ok(AppendOnlyTopNExecutor::new(
+        Ok(TopNExecutor::new(
             params.input.remove(0),
             order_types,
             (node.offset as usize, limit),

@@ -20,10 +20,10 @@ pub struct UnionExecutorBuilder;
 impl ExecutorBuilder for UnionExecutorBuilder {
     fn new_boxed_executor(
         params: ExecutorParams,
-        node: &stream_plan::StreamNode,
+        node: &StreamNode,
         _store: impl StateStore,
         _stream: &mut LocalStreamManagerCore,
-    ) -> risingwave_common::error::Result<BoxedExecutor> {
+    ) -> Result<BoxedExecutor> {
         try_match_expand!(node.get_node().unwrap(), Node::UnionNode)?;
         Ok(UnionExecutor::new(params.pk_indices, params.input).boxed())
     }

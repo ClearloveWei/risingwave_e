@@ -12,24 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use itertools::Itertools;
-use risingwave_common::error::Result;
-use risingwave_common::try_match_expand;
-use risingwave_pb::stream_plan;
-use risingwave_pb::stream_plan::stream_node::Node;
-use risingwave_storage::StateStore;
-
-use crate::executor::ExecutorBuilder;
+use super::*;
 use crate::executor_v2::aggregation::AggCall;
-use crate::executor_v2::{BoxedExecutor, Executor, LocalSimpleAggExecutor};
-use crate::task::{build_agg_call_from_prost, ExecutorParams, LocalStreamManagerCore};
+use crate::executor_v2::LocalSimpleAggExecutor;
+use crate::task::build_agg_call_from_prost;
 
 pub struct LocalSimpleAggExecutorBuilder;
 
 impl ExecutorBuilder for LocalSimpleAggExecutorBuilder {
     fn new_boxed_executor(
         mut params: ExecutorParams,
-        node: &stream_plan::StreamNode,
+        node: &StreamNode,
         _store: impl StateStore,
         _stream: &mut LocalStreamManagerCore,
     ) -> Result<BoxedExecutor> {

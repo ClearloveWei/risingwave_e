@@ -12,33 +12,43 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use risingwave_expr::expr::build_from_prost;
+//! Streaming Aggregators
 
 use super::*;
-use crate::executor_v2::ProjectExecutor;
+use crate::executor_v2::aggregation::AggCall;
+use crate::executor_v2::SimpleAggExecutor;
+use crate::task::build_agg_call_from_prost;
 
-pub struct ProjectExecutorBuilder;
+pub struct SimpleAggExecutorBuilder;
 
-impl ExecutorBuilder for ProjectExecutorBuilder {
+impl ExecutorBuilder for SimpleAggExecutorBuilder {
     fn new_boxed_executor(
         mut params: ExecutorParams,
-        node: &stream_plan::StreamNode,
-        _store: impl StateStore,
+        node: &StreamNode,
+        store: impl StateStore,
         _stream: &mut LocalStreamManagerCore,
     ) -> Result<BoxedExecutor> {
-        let node = try_match_expand!(node.get_node().unwrap(), Node::ProjectNode)?;
-        let project_exprs = node
-            .get_select_list()
+        let node = try_match_expand!(node.get_node().unwrap(), Node::GlobalSimpleAggNode)?;
+        let agg_calls: Vec<AggCall> = node
+            .get_agg_calls()
             .iter()
-            .map(build_from_prost)
-            .collect::<Result<Vec<_>>>()?;
+            .map(build_agg_call_from_prost)
+            .try_collect()?;
+        let keyspace = Keyspace::executor_root(store, params.executor_id);
+        let key_indices = node
+            .get_distribution_keys()
+            .iter()
+            .map(|key| *key as usize)
+            .collect::<Vec<_>>();
 
-        Ok(ProjectExecutor::new(
+        Ok(SimpleAggExecutor::new(
             params.input.remove(0),
+            agg_calls,
+            keyspace,
             params.pk_indices,
-            project_exprs,
             params.executor_id,
-        )
+            key_indices,
+        )?
         .boxed())
     }
 }
