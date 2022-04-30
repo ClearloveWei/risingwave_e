@@ -17,7 +17,6 @@
 use super::*;
 use crate::executor_v2::aggregation::AggCall;
 use crate::executor_v2::SimpleAggExecutor;
-use crate::task::build_agg_call_from_prost;
 
 pub struct SimpleAggExecutorBuilder;
 
