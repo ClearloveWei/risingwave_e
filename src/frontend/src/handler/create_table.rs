@@ -25,6 +25,7 @@ use risingwave_common::catalog::{
 use risingwave_common::error::{ErrorCode, Result};
 use risingwave_pb::catalog::source::OptionalAssociatedTableId;
 use risingwave_pb::catalog::{PbSource, PbTable, StreamSourceInfo, WatermarkDesc};
+use risingwave_pb::plan_common::column_desc::GeneratedOrDefaultColumn;
 use risingwave_pb::plan_common::GeneratedColumnDesc;
 use risingwave_pb::stream_plan::stream_fragment_graph::Parallelism;
 use risingwave_sqlparser::ast::{
@@ -163,7 +164,7 @@ pub fn bind_sql_columns(
             name: name.real_value(),
             field_descs,
             type_name: "".to_string(),
-            generated_column: None,
+            generated_or_default_column: None,
         });
     }
 
@@ -229,9 +230,11 @@ pub fn bind_sql_column_constraints(
                         &generated_column_names,
                     )?;
 
-                    column_catalogs[idx].column_desc.generated_column = Some(GeneratedColumnDesc {
-                        expr: Some(expr_impl.to_expr_proto()),
-                    });
+                    column_catalogs[idx].column_desc.generated_or_default_column = Some(
+                        GeneratedOrDefaultColumn::GeneratedColumn(GeneratedColumnDesc {
+                            expr: Some(expr_impl.to_expr_proto()),
+                        }),
+                    );
                 }
                 ColumnOption::Unique { is_primary: true } => {
                     // Bind primary key in `bind_sql_table_column_constraints`

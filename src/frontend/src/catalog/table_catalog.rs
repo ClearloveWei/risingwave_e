@@ -561,7 +561,7 @@ mod tests {
                                 ColumnDesc::new_atomic(DataType::Varchar, "zipcode", 3),
                             ],
                             type_name: ".test.Country".to_string(),
-                            generated_column: None,
+                            generated_or_default_column: None,
                         },
                         is_hidden: false
                     }
