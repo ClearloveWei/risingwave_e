@@ -2228,8 +2228,6 @@ impl Parser {
             Ok(Some(ColumnOption::NotNull))
         } else if self.parse_keyword(Keyword::NULL) {
             Ok(Some(ColumnOption::Null))
-        } else if self.parse_keyword(Keyword::DEFAULT) {
-            Ok(Some(ColumnOption::Default(self.parse_expr()?)))
         } else if self.parse_keywords(&[Keyword::PRIMARY, Keyword::KEY]) {
             Ok(Some(ColumnOption::Unique { is_primary: true }))
         } else if self.parse_keyword(Keyword::UNIQUE) {
@@ -2265,6 +2263,8 @@ impl Parser {
             Ok(Some(ColumnOption::Check(expr)))
         } else if self.parse_keyword(Keyword::AS) {
             Ok(Some(ColumnOption::GeneratedColumns(self.parse_expr()?)))
+        } else if self.parse_keyword(Keyword::DEFAULT) {
+            Ok(Some(ColumnOption::DefaultColumns(self.parse_expr()?)))
         } else {
             Ok(None)
         }

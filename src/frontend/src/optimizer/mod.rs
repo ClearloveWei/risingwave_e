@@ -413,7 +413,7 @@ impl PlanRoot {
         .into();
 
         // Add generated columns.
-        let exprs = LogicalSource::gen_optional_generated_column_project_exprs(
+        let exprs = LogicalSource::gen_optional_generated_or_default_column_project_exprs(
             columns.iter().map(|c| c.column_desc.clone()).collect(),
         )?;
         if let Some(exprs) = exprs {

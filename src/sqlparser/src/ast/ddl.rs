@@ -441,6 +441,8 @@ pub enum ColumnOption {
     DialectSpecific(Vec<Token>),
     /// AS ( <generation_expr> )`
     GeneratedColumns(Expr),
+    /// DEFAULT `()`
+    DefaultColumns(Expr),
 }
 
 impl fmt::Display for ColumnOption {
@@ -474,6 +476,7 @@ impl fmt::Display for ColumnOption {
             Check(expr) => write!(f, "CHECK ({})", expr),
             DialectSpecific(val) => write!(f, "{}", display_separated(val, " ")),
             GeneratedColumns(expr) => write!(f, "AS {}", expr),
+            DefaultColumns(expr) => write!(f, "DEFAULT {}", expr),
         }
     }
 }

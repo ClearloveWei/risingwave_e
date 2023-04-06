@@ -135,6 +135,29 @@ impl Binder {
             }
         };
 
+        let mut target_table_col_indices: Vec<usize> = vec![];
+        'outer: for query_column in &columns {
+            let column_name = query_column.real_value();
+            for (col_idx, table_column) in columns_to_insert.iter().enumerate() {
+                if column_name == table_column.name() {
+                    target_table_col_indices.push(col_idx);
+                    continue 'outer;
+                }
+            }
+            // Invalid column name found
+            return Err(RwError::from(ErrorCode::BindError(format!(
+                "Column {} not found in table {}",
+                column_name, table_name
+            ))));
+        }
+
+        let default_columns_vec = table_catalog.default_columns().collect_vec();
+        let default_columns = if default_columns_vec.len() > 0 {
+            Some(default_columns_vec)
+        } else {
+            None
+        };
+
         // When the column types of `source` query do not match `expected_types`, casting is
         // needed.
         //
@@ -166,8 +189,17 @@ impl Binder {
                 offset: None,
                 fetch: None,
             } if order.is_empty() => {
-                let (values, nulls_inserted) =
-                    self.bind_values(values, Some(expected_types.clone()))?;
+                if values.0.len() != target_table_col_indices.len() {
+                    return Err(RwError::from(ErrorCode::BindError(
+                        "values len does not match num of target indices".to_string(),
+                    )));
+                }
+                let (values, nulls_inserted) = self.bind_values(
+                    values,
+                    Some(expected_types.clone()),
+                    default_columns,
+                    Some(target_table_col_indices.clone()),
+                )?;
                 let body = BoundSetExpr::Values(values.into());
                 (
                     BoundQuery {
@@ -199,22 +231,6 @@ impl Binder {
                 (bound, cast_exprs, false)
             }
         };
-
-        let mut target_table_col_indices: Vec<usize> = vec![];
-        'outer: for query_column in &columns {
-            let column_name = query_column.real_value();
-            for (col_idx, table_column) in columns_to_insert.iter().enumerate() {
-                if column_name == table_column.name() {
-                    target_table_col_indices.push(col_idx);
-                    continue 'outer;
-                }
-            }
-            // Invalid column name found
-            return Err(RwError::from(ErrorCode::BindError(format!(
-                "Column {} not found in table {}",
-                column_name, table_name
-            ))));
-        }
 
         // create table t1 (v1 int, v2 int); insert into t1 (v2) values (5);
         // We added the null values above. Above is equivalent to

@@ -26,7 +26,7 @@ use risingwave_common::error::{ErrorCode, Result};
 use risingwave_pb::catalog::source::OptionalAssociatedTableId;
 use risingwave_pb::catalog::{PbSource, PbTable, StreamSourceInfo, WatermarkDesc};
 use risingwave_pb::plan_common::column_desc::GeneratedOrDefaultColumn;
-use risingwave_pb::plan_common::GeneratedColumnDesc;
+use risingwave_pb::plan_common::{GeneratedColumnDesc, DefaultColumnDesc};
 use risingwave_pb::stream_plan::stream_fragment_graph::Parallelism;
 use risingwave_sqlparser::ast::{
     ColumnDef, ColumnOption, DataType as AstDataType, ObjectName, SourceSchema, SourceWatermark,
@@ -193,6 +193,20 @@ fn check_generated_column_constraints(
     Ok(())
 }
 
+fn check_default_column_constraints(
+    expr: &ExprImpl,
+    column_catalogs: &[ColumnCatalog],
+) -> Result<()> {
+    let input_refs = expr.collect_input_refs(column_catalogs.len());
+    if input_refs.count_ones(..) > 0 {
+        return Err(ErrorCode::BindError(format!(
+            "Default can not reference another column, and you should try Generate column instead."
+        ))
+        .into());
+    }
+    Ok(())
+}
+
 /// Binds constraints that can be only specified in column definitions.
 pub fn bind_sql_column_constraints(
     session: &SessionImpl,
@@ -232,6 +246,22 @@ pub fn bind_sql_column_constraints(
 
                     column_catalogs[idx].column_desc.generated_or_default_column = Some(
                         GeneratedOrDefaultColumn::GeneratedColumn(GeneratedColumnDesc {
+                            expr: Some(expr_impl.to_expr_proto()),
+                        }),
+                    );
+                }
+                ColumnOption::DefaultColumns(expr) => {
+                    let idx = binder
+                        .get_column_binding_index(table_name.clone(), &column.name.real_value())?;
+                    let expr_impl = binder.bind_expr(expr)?;
+
+                    check_default_column_constraints(
+                        &expr_impl,
+                        column_catalogs,
+                    )?;
+
+                    column_catalogs[idx].column_desc.generated_or_default_column = Some(
+                        GeneratedOrDefaultColumn::DefaultColumn(DefaultColumnDesc {
                             expr: Some(expr_impl.to_expr_proto()),
                         }),
                     );
@@ -281,7 +311,7 @@ pub fn bind_sql_table_column_constraints(
                     }
                     pk_column_names.push(column.name.real_value());
                 }
-                ColumnOption::GeneratedColumns(_) => {
+                ColumnOption::GeneratedColumns(_) | ColumnOption::DefaultColumns(_)=> {
                     // Bind generated columns in `bind_sql_column_constraints`
                 }
                 _ => {

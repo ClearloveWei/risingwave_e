@@ -23,7 +23,7 @@ use risingwave_common::catalog::{ColumnCatalog, ColumnDesc, Schema};
 use risingwave_common::error::Result;
 use risingwave_connector::source::DataType;
 use risingwave_pb::plan_common::column_desc::GeneratedOrDefaultColumn;
-use risingwave_pb::plan_common::GeneratedColumnDesc;
+use risingwave_pb::plan_common::{DefaultColumnDesc, GeneratedColumnDesc};
 
 use super::stream_watermark_filter::StreamWatermarkFilter;
 use super::{
@@ -126,7 +126,7 @@ impl LogicalSource {
             ctx,
         );
 
-        let exprs = Self::gen_optional_generated_column_project_exprs(column_descs)?;
+        let exprs = Self::gen_optional_generated_or_default_column_project_exprs(column_descs)?;
         if let Some(exprs) = exprs {
             Ok(LogicalProject::new(source.into(), exprs).into())
         } else {
@@ -134,7 +134,7 @@ impl LogicalSource {
         }
     }
 
-    pub fn gen_optional_generated_column_project_exprs(
+    pub fn gen_optional_generated_or_default_column_project_exprs(
         column_descs: Vec<ColumnDesc>,
     ) -> Result<Option<Vec<ExprImpl>>> {
         if !column_descs.iter().any(|c| c.is_generated()) {
@@ -170,6 +170,20 @@ impl LogicalSource {
                         rewriter.rewrite_expr(ExprImpl::from_expr_proto(&expr.unwrap())?);
                     let casted_expr = proj_expr.cast_assign(column_desc.data_type)?;
                     exprs.push(casted_expr);
+                } else {
+                    unreachable!()
+                }
+            } else if column_desc.is_default() {
+                if let GeneratedOrDefaultColumn::DefaultColumn(default_column) =
+                    column_desc.generated_or_default_column.unwrap()
+                {
+                    let DefaultColumnDesc { expr } = default_column;
+                    let proj_expr =
+                        rewriter.rewrite_expr(ExprImpl::from_expr_proto(&expr.unwrap())?);
+                    let casted_expr = proj_expr.cast_assign(column_desc.data_type)?;
+                    exprs.push(casted_expr);
+                } else {
+                    unreachable!()
                 }
             } else {
                 let input_ref = InputRef {
@@ -269,9 +283,9 @@ impl LogicalSource {
         }
     }
 
-    fn wrap_with_optional_generated_columns_stream_proj(&self) -> Result<PlanRef> {
+    fn wrap_with_optional_generated_or_default_columns_stream_proj(&self) -> Result<PlanRef> {
         let column_catalogs = self.core.column_catalog.clone();
-        let exprs = Self::gen_optional_generated_column_project_exprs(
+        let exprs = Self::gen_optional_generated_or_default_column_project_exprs(
             column_catalogs
                 .iter()
                 .map(|c| &c.column_desc)
@@ -288,9 +302,9 @@ impl LogicalSource {
         }
     }
 
-    fn wrap_with_optional_generated_columns_batch_proj(&self) -> Result<PlanRef> {
+    fn wrap_with_optional_generated_or_default_columns_batch_proj(&self) -> Result<PlanRef> {
         let column_catalogs = self.core.column_catalog.clone();
-        let exprs = Self::gen_optional_generated_column_project_exprs(
+        let exprs = Self::gen_optional_generated_or_default_column_project_exprs(
             column_catalogs
                 .iter()
                 .map(|c| &c.column_desc)
@@ -308,7 +322,7 @@ impl LogicalSource {
     }
 }
 
-impl_plan_tree_node_for_leaf! {LogicalSource}
+impl_plan_tree_node_for_leaf! { LogicalSource }
 
 impl fmt::Display for LogicalSource {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -520,7 +534,7 @@ impl PredicatePushdown for LogicalSource {
 
 impl ToBatch for LogicalSource {
     fn to_batch(&self) -> Result<PlanRef> {
-        let source = self.wrap_with_optional_generated_columns_batch_proj()?;
+        let source = self.wrap_with_optional_generated_or_default_columns_batch_proj()?;
         Ok(source)
     }
 }
@@ -531,7 +545,7 @@ impl ToStream for LogicalSource {
             StreamSource::new(self.rewrite_to_stream_batch_source()).into()
         } else {
             // Create MV on source.
-            self.wrap_with_optional_generated_columns_stream_proj()?
+            self.wrap_with_optional_generated_or_default_columns_stream_proj()?
         };
 
         if let Some(catalog) = self.source_catalog() && !catalog.watermark_descs.is_empty() && !self.core.for_table{

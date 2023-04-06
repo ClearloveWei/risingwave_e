@@ -12,16 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::ptr::null;
+
 use itertools::Itertools;
 use risingwave_common::catalog::{Field, Schema};
 use risingwave_common::error::{ErrorCode, Result};
 use risingwave_common::types::DataType;
 use risingwave_common::util::iter_util::ZipEqFast;
+use risingwave_pb::plan_common::column_desc::GeneratedOrDefaultColumn;
+use risingwave_pb::plan_common::{DefaultColumnDesc, GeneratedColumnDesc};
 use risingwave_sqlparser::ast::Values;
 
 use super::bind_context::Clause;
 use super::statement::RewriteExprsRecursive;
 use crate::binder::Binder;
+use crate::catalog::ColumnId;
 use crate::expr::{align_types, CorrelatedId, Depth, ExprImpl};
 
 #[derive(Debug, Clone)]
@@ -89,15 +94,61 @@ impl Binder {
         &mut self,
         values: Values,
         expected_types: Option<Vec<DataType>>,
+        default_columns: Option<Vec<(ColumnId, GeneratedOrDefaultColumn)>>,
+        target_col_indices: Option<Vec<usize>>,
     ) -> Result<(BoundValues, bool)> {
         assert!(!values.0.is_empty());
 
         self.context.clause = Some(Clause::Values);
+
         let vec2d = values.0;
-        let mut bound = vec2d
-            .into_iter()
-            .map(|vec| vec.into_iter().map(|expr| self.bind_expr(expr)).collect())
-            .collect::<Result<Vec<Vec<_>>>>()?;
+        let mut bound = if let Some(target_col_indices) = target_col_indices {
+            let expected_types = expected_types
+                .expect("target_col_indices should be set together with expected_types");
+            let null_row = expected_types
+                .into_iter()
+                .map(|t| ExprImpl::literal_null(t))
+                .collect_vec();
+            let mut bound_inner = vec![null_row; vec2d.len()];
+            let vec_len = vec2d[0].len();
+            let default_column_as_exprs =
+                if target_col_indices.len() == bound_inner.first().unwrap().len() {
+                    vec![]
+                } else if let Some(default_columns) = default_columns {
+                    default_columns
+                        .into_iter()
+                        .map(|(column_id, should_be_default_column)| {
+                            if let GeneratedOrDefaultColumn::DefaultColumn(default_column) =
+                                should_be_default_column
+                            {
+                                let DefaultColumnDesc { expr } = default_column;
+                                (column_id, ExprImpl::from_expr_proto(&expr.unwrap()))
+                            } else {
+                                unreachable!()
+                            }
+                        })
+                        .collect_vec()
+                } else {
+                    vec![]
+                };
+            for (row, bound_row) in vec2d.into_iter().zip(bound_inner.iter_mut()) {
+                if row.len() != vec_len {
+                    return Err(ErrorCode::BindError(
+                        "VALUES lists must all be the same length".into(),
+                    )
+                    .into());
+                }
+                for (&idx, expr) in target_col_indices.iter().zip(row.into_iter()) {
+                    bound_row[idx] = self.bind_expr(expr)?;
+                }
+            }
+            bound_inner
+        } else {
+            vec2d
+                .into_iter()
+                .map(|vec| vec.into_iter().map(|expr| self.bind_expr(expr)).collect())
+                .collect::<Result<Vec<Vec<_>>>>()?
+        };
         self.context.clause = None;
 
         // Adding Null values in case user did not specify all columns. E.g.
@@ -195,7 +246,7 @@ mod tests {
         let expr1 = Expr::Value(Value::Number("1".to_string()));
         let expr2 = Expr::Value(Value::Number("1.1".to_string()));
         let values = Values(vec![vec![expr1], vec![expr2]]);
-        let res = binder.bind_values(values, None).unwrap();
+        let res = binder.bind_values(values, None, None).unwrap();
 
         let types = vec![DataType::Decimal];
         let n_cols = types.len();

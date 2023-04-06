@@ -24,6 +24,7 @@ use risingwave_common::error::{ErrorCode, RwError};
 use risingwave_common::util::sort_util::ColumnOrder;
 use risingwave_pb::catalog::table::{OptionalAssociatedSourceId, PbTableType, PbTableVersion};
 use risingwave_pb::catalog::PbTable;
+use risingwave_pb::plan_common::column_desc::GeneratedOrDefaultColumn;
 
 use super::{ColumnId, DatabaseId, FragmentId, RelationCatalog, SchemaId};
 use crate::user::UserId;
@@ -388,6 +389,17 @@ impl TableCatalog {
             .iter()
             .filter(|c| c.is_generated())
             .map(|c| c.name())
+    }
+
+    pub fn default_columns(
+        &self,
+    ) -> impl Iterator<Item = (ColumnId, GeneratedOrDefaultColumn)> + '_ {
+        self.columns.iter().filter(|c| c.is_default()).map(|c| {
+            (
+                c.column_id().clone(),
+                c.column_desc.generated_or_default_column.clone().unwrap(),
+            )
+        })
     }
 
     pub fn has_generated_column(&self) -> bool {
